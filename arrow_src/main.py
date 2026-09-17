@@ -38,6 +38,12 @@ import asyncio
 from collections import deque
 from dataclasses import dataclass, field
 
+# Web 版（pygbag）需要在 import pygame 前指定视频驱动，
+# 否则 SDL 报 "The video driver did not add any displays"。
+_IN_WEB = sys.platform.startswith("em")
+if _IN_WEB:
+    os.environ["SDL_VIDEODRIVER"] = "canvas"
+
 try:
     import numpy as np
 except ImportError:            # 未装 numpy 时游戏照常运行，仅音效静音
@@ -1281,10 +1287,28 @@ class Game:
 
 
 # ============================== 入口 ==============================
+async def open_screen(attempts=120, pause=0.25):
+    """创建显示窗口。
+
+    桌面版一次成功；网页版开启 autorun 后程序立即启动，pygbag 可能还没
+    把 WebGL 画布挂好，SDL 会报 "canvas not available"，因此重试等待。
+    """
+    last = None
+    for _ in range(attempts):
+        try:
+            return pygame.display.set_mode((WIN_W, WIN_H))
+        except pygame.error as exc:
+            last = exc
+            if not _IN_WEB:
+                raise
+            await asyncio.sleep(pause)
+    raise pygame.error(f"无法创建显示窗口（已重试 {attempts} 次）：{last}")
+
+
 async def main():
     pygame.init()
     pygame.display.set_caption("一箭又一箭")
-    screen = pygame.display.set_mode((WIN_W, WIN_H))
+    screen = await open_screen()
     game = Game(screen)
     clock = pygame.time.Clock()
     running = True
